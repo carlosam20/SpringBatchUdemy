@@ -1,6 +1,5 @@
 package com.example.SpringBatchUdemy.config;
 
-import com.example.SpringBatchUdemy.XMLSensorDataStructure;
 import com.example.SpringBatchUdemy.dto.InputSensorDataDTO;
 import com.example.SpringBatchUdemy.dto.OutputXMLSensorDataDTO;
 import org.springframework.batch.core.Job;
@@ -10,7 +9,6 @@ import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.repository.support.JobRepositoryFactoryBean;
 import org.springframework.batch.core.step.builder.StepBuilder;
-import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
 import org.springframework.batch.item.file.mapping.RecordFieldSetMapper;
@@ -81,15 +79,18 @@ public class BatchConfig extends DefaultBatchConfiguration{
     }
 
 
+
+
+
     @Bean
-    public FlatFileItemReader<PulsarProperties.Transaction> itemReader() {
+    public FlatFileItemReader<InputSensorDataDTO> itemReader() throws Exception{
         MultiSplitterTokenizer splitterTokenizer = new MultiSplitterTokenizer();
         splitterTokenizer.setNames("date","minTemp","avgTemp","maxTemp");
-        return new FlatFileItemReaderBuilder<PulsarProperties.Transaction>()
+        return new FlatFileItemReaderBuilder<InputSensorDataDTO>()
                 .name("tempItemReader")
                 .resource(resourceTxT)
                 .lineTokenizer(splitterTokenizer)
-                .fieldSetMapper(new RecordFieldSetMapper<>(PulsarProperties.Transaction.class)) // Your custom mapper for Records
+                .fieldSetMapper(new RecordFieldSetMapper<>(InputSensorDataDTO.class)) // Your custom mapper for Records
                 .build();
     }
 
@@ -107,45 +108,28 @@ public class BatchConfig extends DefaultBatchConfiguration{
                 .resource(resourceXML)
                 .encoding("UTF-8")
                 .build();
-
-
-
     }
 
-    @Bean
-    public class TempOperation implements ItemProcessor<PulsarProperties.Transaction,XMLSensorDataStructure> {
-        public XMLSensorDataStructure process(PulsarProperties.Transaction tr) throws Exception {
-            //Perform simple transformation, convert a Foo to a Bar
 
-
-
-            //TODO we have to obtain minimal temperature, average temperature, and max temperature
-            //There is a mapper for OutputXmlSensorDataDTO that can be use for this
-            return new Bar(foo);
-        }
-    }
 
     @Bean
-    public ItemProcessor<PulsarProperties.Transaction, PulsarProperties.Transaction> itemProcessor() {
-        return new CustomItemProcessor();
-    }
-
-    @Bean
-    public Step sensorData(JobRepository jobRepository, PlatformTransactionManager platformTransactionManager){
+    public Step sensorData(PlatformTransactionManager platformTransactionManager) throws Exception {
         return new StepBuilder("process-sensor-data",jobRepository())
-                .<OutputXMLSensorDataDTO,OutputXMLSensorDataDTO>chunk(10, platformTransactionManager)
+                .<InputSensorDataDTO,OutputXMLSensorDataDTO>chunk(10, platformTransactionManager)
                 .chunk(10).transactionManager(platformTransactionManager)
                 .reader(itemReader())
-                .processor()
+                .processor(sensorDataProcessor())
                 .writer()
-                .build()
+                .build();
     }
 
 
+
+
     @Bean
-    public Step moveNotCorrectData(JobRepository jobRepository, PlatformTransactionManager platformTransactionManager){
+    public Step moveNotCorrectData(PlatformTransactionManager platformTransactionManager) throws Exception {
         return new StepBuilder("process-move-not-correct-data",jobRepository())
-                .<OutputXMLSensorDataDTO,OutputXMLSensorDataDTO>chunk(10, platformTransactionManager)
+                .<InputSensorDataDTO,OutputXMLSensorDataDTO>chunk(10, platformTransactionManager)
                 .chunk(10).transactionManager(platformTransactionManager)
                 .reader(itemReader())
                 .processor()
