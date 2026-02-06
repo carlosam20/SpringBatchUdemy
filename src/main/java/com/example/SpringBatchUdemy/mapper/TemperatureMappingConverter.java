@@ -1,7 +1,7 @@
 package com.example.SpringBatchUdemy.mapper;
 
-import com.example.SpringBatchUdemy.XMLSensorDataStructure;
-import com.example.SpringBatchUdemy.dto.OutputXMLSensorDataDTO;
+import com.example.SpringBatchUdemy.dto.XMLSensorDataStructure;
+import com.example.SpringBatchUdemy.dto.InputSensorDataDTO;
 import org.mapstruct.Mapper;
 import org.mapstruct.factory.Mappers;
 
@@ -9,7 +9,7 @@ import org.mapstruct.factory.Mappers;
 public interface TemperatureMappingConverter {
 
     TemperatureMappingConverter INSTANCE = Mappers.getMapper(TemperatureMappingConverter.class);
-    XMLSensorDataStructure ConvertXML(OutputXMLSensorDataDTO outputXMLSensorDataDTO);
+    XMLSensorDataStructure ConvertXML(InputSensorDataDTO inputSensorDataDTO);
 
 
 }

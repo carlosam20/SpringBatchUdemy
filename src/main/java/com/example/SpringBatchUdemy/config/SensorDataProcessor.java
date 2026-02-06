@@ -1,8 +1,8 @@
 package com.example.SpringBatchUdemy.config;
 
 import com.example.SpringBatchUdemy.MathTempServiceImpl;
+import com.example.SpringBatchUdemy.dto.XMLSensorDataStructure;
 import com.example.SpringBatchUdemy.dto.InputSensorDataDTO;
-import com.example.SpringBatchUdemy.dto.OutputXMLSensorDataDTO;
 import com.example.SpringBatchUdemy.mapper.TemperatureMappingConverter;
 import lombok.NonNull;
 import org.apache.commons.logging.Log;
@@ -13,10 +13,10 @@ import org.springframework.stereotype.Component;
 
 
 @Component
-    public class SensorDataProcessor implements ItemProcessor<InputSensorDataDTO, OutputXMLSensorDataDTO> {
+    public class SensorDataProcessor implements ItemProcessor<InputSensorDataDTO, XMLSensorDataStructure> {
     Log log = LogFactory.getLog(TemperatureMappingConverter.class);
     @Override
-        public @NonNull OutputXMLSensorDataDTO process(InputSensorDataDTO isd){
+        public @NonNull XMLSensorDataStructure process(InputSensorDataDTO isd){
         if(isd.temps() == null|| isd.temps().isEmpty() ||  isd.localDate() == null){
             log.error("InputDTO issue on ItemProcessor {}");
             throw new RuntimeException("InputDTO has empty values");
