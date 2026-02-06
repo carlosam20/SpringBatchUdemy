@@ -2,6 +2,9 @@ package com.example.SpringBatchUdemy.config;
 
 import com.example.SpringBatchUdemy.dto.InputSensorDataDTO;
 import com.example.SpringBatchUdemy.dto.OutputXMLSensorDataDTO;
+import lombok.NonNull;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.support.DefaultBatchConfiguration;
@@ -13,7 +16,6 @@ import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
 import org.springframework.batch.item.file.mapping.RecordFieldSetMapper;
 import org.springframework.batch.item.xml.StaxEventItemWriter;
-import org.springframework.batch.item.xml.builder.StaxEventItemWriterBuilder;
 import org.springframework.boot.autoconfigure.pulsar.PulsarProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,9 +28,13 @@ import org.springframework.jdbc.support.JdbcTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
+import java.util.Objects;
+
 
 @Configuration
 public class BatchConfig extends DefaultBatchConfiguration{
+
+    Log log = LogFactory.getLog(BatchConfig.class);
 
     private final Environment environment;
     private final Resource resourceTxT = new FileSystemResource("input/HTE2NP.txt");
@@ -41,16 +47,24 @@ public class BatchConfig extends DefaultBatchConfiguration{
     }
 
     @Bean
-    public Job sensorData(JobRepository jobRepository) {
+    public Job sensorData(
+            JobRepository jobRepository,
+            PlatformTransactionManager platformTransactionManager,
+            SensorDataProcessor sensorDataProcessor,
+            FlatFileItemReader<InputSensorDataDTO> itemReader,
+            StaxEventItemWriter<PulsarProperties.Transaction> sensorDataDTOStaxEventItemWrite) throws Exception {
+        log.info("Starting sensor data job");
         return new JobBuilder("processSensorData", jobRepository)
-                .start()
+                .start(aggregateSensorData(
+                        platformTransactionManager,sensorDataProcessor,itemReader,sensorDataDTOStaxEventItemWrite))
                 .build();
     }
 
     @Bean
-    public DataSource domainDataSource() {
+    public DataSource domainDataSource(){
+
         DriverManagerDataSource dataSource = new DriverManagerDataSource();
-        dataSource.setDriverClassName(environment.getProperty("spring.datasource.driver-class-name"));
+        dataSource.setDriverClassName(Objects.requireNonNull(environment.getProperty("spring.datasource.driver-class-name")));
         dataSource.setUrl(environment.getProperty("spring.datasource.url"));
         dataSource.setUsername(environment.getProperty("spring.datasource.username"));
         dataSource.setPassword(environment.getProperty("spring.datasource.password"));
@@ -59,7 +73,7 @@ public class BatchConfig extends DefaultBatchConfiguration{
 
 
     @Bean
-    public JobRepository jobRepository() {
+    public @NonNull JobRepository jobRepository() {
         JobRepositoryFactoryBean factory = new JobRepositoryFactoryBean();
         factory.setDataSource(domainDataSource());
         factory.setDatabaseType("db2");
@@ -85,6 +99,7 @@ public class BatchConfig extends DefaultBatchConfiguration{
     public FlatFileItemReader<InputSensorDataDTO> itemReader() throws Exception{
         MultiSplitterTokenizer splitterTokenizer = new MultiSplitterTokenizer();
         splitterTokenizer.setNames("date","temps");
+        log.info("Starting Reader txt");
         return new FlatFileItemReaderBuilder<InputSensorDataDTO>()
                 .name("tempItemReader")
                 .resource(resourceTxT)
@@ -96,6 +111,7 @@ public class BatchConfig extends DefaultBatchConfiguration{
 
 //    @Bean
 //    public StaxEventItemWriter<XMLSensorDataStructure> sensorDataDTOStaxEventItemWriter(SensorDataProcessor inputSensorDataDTOFlatFileItemReader){
+//        log.info("Starting Writer XML");
 //        return new StaxEventItemWriterBuilder<XMLSensorDataStructure>()
 //                .name("tempItemWriter")
 //                .resource(resourceXML)
@@ -108,16 +124,16 @@ public class BatchConfig extends DefaultBatchConfiguration{
 
 
     @Bean
-    public Step sensorData(
+    public Step aggregateSensorData(
             PlatformTransactionManager platformTransactionManager,
             SensorDataProcessor sensorDataProcessor,
             FlatFileItemReader<InputSensorDataDTO> itemReader,
             StaxEventItemWriter<PulsarProperties.Transaction> sensorDataDTOStaxEventItemWriter) throws Exception {
-
+            log.info("Starting aggregateSensorData");
         return new StepBuilder("process-sensor-data",jobRepository())
                 .<InputSensorDataDTO,OutputXMLSensorDataDTO>chunk(10, platformTransactionManager)
                 .chunk(10).transactionManager(platformTransactionManager)
-                .reader(itemReader())
+                .reader(itemReader)
                 .processor(sensorDataProcessor)
                 .writer()
                 .build();
@@ -127,7 +143,8 @@ public class BatchConfig extends DefaultBatchConfiguration{
 
 
 //    @Bean
-//    public Step moveNotCorrectData(PlatformTransactionManager platformTransactionManager) throws Exception {
+//    public Step moveAnomalies(PlatformTransactionManager platformTransactionManager) throws Exception {
+//        log.info("Starting move anomalies step txt");
 //        return new StepBuilder("process-move-not-correct-data",jobRepository())
 //                .<InputSensorDataDTO,OutputXMLSensorDataDTO>chunk(10, platformTransactionManager)
 //                .chunk(10).transactionManager(platformTransactionManager)
