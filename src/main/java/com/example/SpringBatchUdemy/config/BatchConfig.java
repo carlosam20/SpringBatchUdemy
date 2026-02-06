@@ -23,7 +23,6 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.WritableResource;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.support.JdbcTransactionManager;
-import org.springframework.oxm.jaxb.Jaxb2Marshaller;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
@@ -85,40 +84,41 @@ public class BatchConfig extends DefaultBatchConfiguration{
     @Bean
     public FlatFileItemReader<InputSensorDataDTO> itemReader() throws Exception{
         MultiSplitterTokenizer splitterTokenizer = new MultiSplitterTokenizer();
-        splitterTokenizer.setNames("date","minTemp","avgTemp","maxTemp");
+        splitterTokenizer.setNames("date","temps");
         return new FlatFileItemReaderBuilder<InputSensorDataDTO>()
                 .name("tempItemReader")
                 .resource(resourceTxT)
                 .lineTokenizer(splitterTokenizer)
-                .fieldSetMapper(new RecordFieldSetMapper<>(InputSensorDataDTO.class)) // Your custom mapper for Records
-                .build();
-    }
-
-    @Bean
-    public Jaxb2Marshaller marshaller() {
-        Jaxb2Marshaller marshaller = new Jaxb2Marshaller();
-        marshaller.setClassesToBeBound(OutputXMLSensorDataDTO.class);
-        return marshaller;
-    }
-
-    @Bean
-    public StaxEventItemWriter<PulsarProperties.Transaction> sensorDataDTOStaxEventItemWriter(FlatFileItemReader<InputSensorDataDTO> inputSensorDataDTOFlatFileItemReader){
-        return new StaxEventItemWriterBuilder<PulsarProperties.Transaction>()
-                .name("tempItemWriter")
-                .resource(resourceXML)
-                .encoding("UTF-8")
+                .fieldSetMapper(new RecordFieldSetMapper<>(InputSensorDataDTO.class))
                 .build();
     }
 
 
+//    @Bean
+//    public StaxEventItemWriter<XMLSensorDataStructure> sensorDataDTOStaxEventItemWriter(SensorDataProcessor inputSensorDataDTOFlatFileItemReader){
+//        return new StaxEventItemWriterBuilder<XMLSensorDataStructure>()
+//                .name("tempItemWriter")
+//                .resource(resourceXML)
+//                .marshaller()
+//                .overwriteOutput(true)
+//                .encoding("UTF-8")
+//                .build();
+//    }
+
+
 
     @Bean
-    public Step sensorData(PlatformTransactionManager platformTransactionManager) throws Exception {
+    public Step sensorData(
+            PlatformTransactionManager platformTransactionManager,
+            SensorDataProcessor sensorDataProcessor,
+            FlatFileItemReader<InputSensorDataDTO> itemReader,
+            StaxEventItemWriter<PulsarProperties.Transaction> sensorDataDTOStaxEventItemWriter) throws Exception {
+
         return new StepBuilder("process-sensor-data",jobRepository())
                 .<InputSensorDataDTO,OutputXMLSensorDataDTO>chunk(10, platformTransactionManager)
                 .chunk(10).transactionManager(platformTransactionManager)
                 .reader(itemReader())
-                .processor(sensorDataProcessor())
+                .processor(sensorDataProcessor)
                 .writer()
                 .build();
     }
@@ -126,14 +126,14 @@ public class BatchConfig extends DefaultBatchConfiguration{
 
 
 
-    @Bean
-    public Step moveNotCorrectData(PlatformTransactionManager platformTransactionManager) throws Exception {
-        return new StepBuilder("process-move-not-correct-data",jobRepository())
-                .<InputSensorDataDTO,OutputXMLSensorDataDTO>chunk(10, platformTransactionManager)
-                .chunk(10).transactionManager(platformTransactionManager)
-                .reader(itemReader())
-                .processor()
-                .writer()
-                .build();
-    }
+//    @Bean
+//    public Step moveNotCorrectData(PlatformTransactionManager platformTransactionManager) throws Exception {
+//        return new StepBuilder("process-move-not-correct-data",jobRepository())
+//                .<InputSensorDataDTO,OutputXMLSensorDataDTO>chunk(10, platformTransactionManager)
+//                .chunk(10).transactionManager(platformTransactionManager)
+//                .reader(itemReader())
+//                .processor()
+//                .writer()
+//                .build();
+//    }
 }
