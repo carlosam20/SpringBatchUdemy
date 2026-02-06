@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
     @Override
         public @NonNull OutputXMLSensorDataDTO process(InputSensorDataDTO isd){
         if(isd.temps() == null|| isd.temps().isEmpty() ||  isd.localDate() == null){
+            log.error("InputDTO issue on ItemProcessor {}");
             throw new RuntimeException("InputDTO has empty values");
         }
         MathTempServiceImpl mathTempService = new MathTempServiceImpl();
