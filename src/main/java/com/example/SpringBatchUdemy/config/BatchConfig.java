@@ -2,6 +2,9 @@ package com.example.SpringBatchUdemy.config;
 
 import com.example.SpringBatchUdemy.dto.XMLSensorDataStructure;
 import com.example.SpringBatchUdemy.dto.InputSensorDataDTO;
+import com.example.SpringBatchUdemy.mapper.SensorDataFieldSetMapper;
+import com.example.SpringBatchUdemy.utils.ReadDebugListener;
+import lombok.NonNull;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.batch.core.Job;
@@ -13,9 +16,10 @@ import org.springframework.batch.core.repository.support.JobRepositoryFactoryBea
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
-import org.springframework.batch.item.file.mapping.RecordFieldSetMapper;
+import org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper;
 import org.springframework.batch.item.xml.StaxEventItemWriter;
 import org.springframework.batch.item.xml.builder.StaxEventItemWriterBuilder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -40,28 +44,13 @@ public class BatchConfig extends DefaultBatchConfiguration{
 
     Log log = LogFactory.getLog(BatchConfig.class);
 
-    private final Environment environment;
+    @Autowired
+    Environment environment;
 
     @Value("classpath:input/HTE2NP.txt")
     Resource resourceTxT;
 
     WritableResource resourceXML = new FileSystemResource("output/data.xml");
-
-
-
-
-
-    public BatchConfig(Environment environment) {
-        this.environment = environment;
-    }
-
-
-
-
-
-
-
-
 
 
     @Qualifier("convertSensorDataXML")
@@ -76,8 +65,7 @@ public class BatchConfig extends DefaultBatchConfiguration{
     }
 
     @Bean
-    public DataSource dataSource(){
-
+    public DataSource dataSource() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource();
         dataSource.setDriverClassName(Objects.requireNonNull(environment.getProperty("spring.datasource.driver-class-name")));
         dataSource.setUrl(environment.getProperty("spring.datasource.url"));
@@ -86,47 +74,65 @@ public class BatchConfig extends DefaultBatchConfiguration{
         return dataSource;
     }
 
-
-    @Bean
-    public JobRepository jobRepository(DataSource dataSource, PlatformTransactionManager transactionManager) throws Exception {
-        JobRepositoryFactoryBean factory = new JobRepositoryFactoryBean();
-
-        // Wire the dependencies
-        factory.setDataSource(dataSource);
-        factory.setTransactionManager(transactionManager);
-
-        // Critical for Postgres: explicitly set the type to avoid "guessing" errors
-        factory.setDatabaseType("POSTGRES");
-
-        // Optional: Ensure the factory initializes correctly
-        factory.afterPropertiesSet();
-
-        return factory.getObject();
-    }
-
-
-
-
-
+    // --- 2. TRANSACTION MANAGER DEFINITION ---
     @Bean
     public PlatformTransactionManager transactionManager(DataSource dataSource) {
         return new JdbcTransactionManager(dataSource);
     }
 
+    // --- 3. INFRASTRUCTURE OVERRIDES ---
+    // These methods are called internally by DefaultBatchConfiguration to build
+    // the JobRepository, JobLauncher, and JobExplorer.
 
+    @Override
+    protected DataSource getDataSource() {
+        return dataSource();
+    }
 
+    @Override
+    protected PlatformTransactionManager getTransactionManager() {
+        return transactionManager(dataSource());
+    }
 
+    // --- 4. CUSTOM JOB REPOSITORY LOGIC ---
+    // Instead of a standalone @Bean JobRepository, we override this protected method.
+    // This ensures that the custom JobRepository we build here is the one used
+    // by the internal JobLauncher.
+    @Bean
+    @Override
+    @NonNull
+    public  JobRepository jobRepository() {
+        try {
+            JobRepositoryFactoryBean factory = new JobRepositoryFactoryBean();
+            factory.setDataSource(getDataSource());
+            factory.setTransactionManager(getTransactionManager());
+
+            // Explicitly set the type to POSTGRES to ensure correct SQL dialects.
+            factory.setDatabaseType("POSTGRES");
+
+            // CRITICAL FOR POSTGRESQL:
+            // Spring Batch defaults to ISOLATION_SERIALIZABLE.
+            // ISOLATION_READ_COMMITTED prevents serialization errors in PostgreSQL.
+            factory.setIsolationLevelForCreate("ISOLATION_READ_COMMITTED");
+
+            factory.afterPropertiesSet();
+            return factory.getObject();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize JobRepository", e);
+        }
+    }
 
     @Bean
-    public FlatFileItemReader<InputSensorDataDTO> itemReader() throws Exception{
+    public FlatFileItemReader<InputSensorDataDTO> itemReader() {
         MultiSplitterTokenizer splitterTokenizer = new MultiSplitterTokenizer();
-        splitterTokenizer.setNames("date","temps");
+        splitterTokenizer.setNames("date", "temps");
         log.info("Starting Reader txt");
+//        BeanWrapperFieldSetMapper<InputSensorDataDTO> fieldSetMapper = new BeanWrapperFieldSetMapper<>();
         return new FlatFileItemReaderBuilder<InputSensorDataDTO>()
                 .name("tempItemReader")
                 .resource(resourceTxT)
                 .lineTokenizer(splitterTokenizer)
-                .fieldSetMapper(new RecordFieldSetMapper<>(InputSensorDataDTO.class))
+                .fieldSetMapper(new SensorDataFieldSetMapper())
                 .build();
     }
 
@@ -135,7 +141,6 @@ public class BatchConfig extends DefaultBatchConfiguration{
     public XStreamMarshaller tempMarshaller() {
         XStreamMarshaller marshaller = new XStreamMarshaller();
         Map<String, Class<?>> aliases = new HashMap<>();
-        // Assuming your XML looks like: <weather><date>...</date></weather>
         aliases.put("daily-data", XMLSensorDataStructure.class);
         marshaller.setAliases(aliases);
         marshaller.setSupportedClasses(XMLSensorDataStructure.class);
@@ -157,7 +162,6 @@ public class BatchConfig extends DefaultBatchConfiguration{
     }
 
 
-
     @Bean
     public Step aggregateSensorData(
             PlatformTransactionManager platformTransactionManager,
@@ -169,13 +173,11 @@ public class BatchConfig extends DefaultBatchConfiguration{
                 .<InputSensorDataDTO,XMLSensorDataStructure>chunk(10, platformTransactionManager)
                 .chunk(10).transactionManager(platformTransactionManager)
                 .reader(itemReader)
-                .processor(sensorDataProcessor)
+                .listener(new ReadDebugListener())
+//                .processor(sensorDataProcessor)
                 .writer(sensorDataDTOStaxEventItemWriter)
                 .build();
     }
-
-
-
 
 //    @Bean
 //    public Step moveAnomalies(PlatformTransactionManager platformTransactionManager) throws Exception {
