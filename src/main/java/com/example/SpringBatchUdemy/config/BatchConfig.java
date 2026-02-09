@@ -4,6 +4,7 @@ import com.example.SpringBatchUdemy.dto.XMLSensorDataStructure;
 import com.example.SpringBatchUdemy.dto.InputSensorDataDTO;
 import com.example.SpringBatchUdemy.mapper.SensorDataFieldSetMapper;
 import com.example.SpringBatchUdemy.utils.ReadDebugListener;
+import com.thoughtworks.xstream.security.ExplicitTypePermission;
 import lombok.NonNull;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -30,10 +31,12 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.WritableResource;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.support.JdbcTransactionManager;
+import org.springframework.oxm.XmlMappingException;
 import org.springframework.oxm.xstream.XStreamMarshaller;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -127,9 +130,9 @@ public class BatchConfig extends DefaultBatchConfiguration{
         MultiSplitterTokenizer splitterTokenizer = new MultiSplitterTokenizer();
         splitterTokenizer.setNames("date", "temps");
         log.info("Starting Reader txt");
-//        BeanWrapperFieldSetMapper<InputSensorDataDTO> fieldSetMapper = new BeanWrapperFieldSetMapper<>();
         return new FlatFileItemReaderBuilder<InputSensorDataDTO>()
                 .name("tempItemReader")
+                .strict(true)
                 .resource(resourceTxT)
                 .lineTokenizer(splitterTokenizer)
                 .fieldSetMapper(new SensorDataFieldSetMapper())
@@ -139,25 +142,39 @@ public class BatchConfig extends DefaultBatchConfiguration{
 
     @Bean
     public XStreamMarshaller tempMarshaller() {
-        XStreamMarshaller marshaller = new XStreamMarshaller();
-        Map<String, Class<?>> aliases = new HashMap<>();
-        aliases.put("daily-data", XMLSensorDataStructure.class);
-        marshaller.setAliases(aliases);
-        marshaller.setSupportedClasses(XMLSensorDataStructure.class);
-        return marshaller;
+        try{
+            XStreamMarshaller marshaller = new XStreamMarshaller();
+            Map<String, Class<?>> aliases = new HashMap<>();
+            aliases.put("daily-data", XMLSensorDataStructure.class);
+            aliases.put("date", LocalDate.class);
+            aliases.put("minTemp", Double.class);
+            aliases.put("avgTemp", Double.class);
+            aliases.put("maxTemp", Double.class);
+
+            ExplicitTypePermission typePermission = new ExplicitTypePermission(new Class[]
+                    {
+                        XMLSensorDataStructure.class
+                    });
+            marshaller.setAliases(aliases);
+            marshaller.setTypePermissions(typePermission);
+            marshaller.setSupportedClasses(XMLSensorDataStructure.class);
+            return marshaller;
+        } catch (XmlMappingException e) {
+            throw new RuntimeException(e);
+        }
+
     }
 
     @Bean
     public StaxEventItemWriter<XMLSensorDataStructure> sensorDataDTOStaxEventItemWriter() {
-
         log.info("Starting Writer XML");
         return new StaxEventItemWriterBuilder<XMLSensorDataStructure>()
                 .name("tempItemWriter")
-                .resource(resourceXML)
                 .marshaller(tempMarshaller())
+                .resource(resourceXML)
                 .rootTagName("data")
-                .overwriteOutput(true)
                 .encoding("UTF-8")
+                .overwriteOutput(true)
                 .build();
     }
 
@@ -167,14 +184,14 @@ public class BatchConfig extends DefaultBatchConfiguration{
             PlatformTransactionManager platformTransactionManager,
             SensorDataProcessor sensorDataProcessor,
             FlatFileItemReader<InputSensorDataDTO> itemReader,
-            StaxEventItemWriter<XMLSensorDataStructure> sensorDataDTOStaxEventItemWriter) throws Exception {
+            StaxEventItemWriter<XMLSensorDataStructure> sensorDataDTOStaxEventItemWriter) {
             log.info("Starting aggregateSensorData");
         return new StepBuilder("process-sensor-data",jobRepository())
                 .<InputSensorDataDTO,XMLSensorDataStructure>chunk(10, platformTransactionManager)
-                .chunk(10).transactionManager(platformTransactionManager)
+//                .chunk(10).transactionManager(platformTransactionManager)
                 .reader(itemReader)
                 .listener(new ReadDebugListener())
-//                .processor(sensorDataProcessor)
+                .processor(sensorDataProcessor)
                 .writer(sensorDataDTOStaxEventItemWriter)
                 .build();
     }

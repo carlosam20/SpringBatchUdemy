@@ -5,6 +5,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.batch.core.ItemReadListener;
 
+
 public class ReadDebugListener implements ItemReadListener<Object> {
     Log log = LogFactory.getLog(TemperatureMappingConverter.class);
     @Override
@@ -14,7 +15,7 @@ public class ReadDebugListener implements ItemReadListener<Object> {
 
     @Override
     public void afterRead(Object item) {
-        log.info((Object) "Successfully read item: {}", (Throwable) item);
+        log.info("Successfully read item:");
     }
 
     @Override

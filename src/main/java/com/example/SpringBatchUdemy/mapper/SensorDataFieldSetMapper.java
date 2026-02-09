@@ -6,7 +6,9 @@ import org.springframework.batch.item.file.mapping.FieldSetMapper;
 import org.springframework.batch.item.file.transform.FieldSet;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 
@@ -15,14 +17,16 @@ public class SensorDataFieldSetMapper implements FieldSetMapper<InputSensorDataD
     @Override
     @NonNull
     public InputSensorDataDTO mapFieldSet(FieldSet fieldSet) {
-        String dateString = fieldSet.readString(0);
-        LocalDate date = LocalDate.parse(dateString);
-        List<Double> temps = new ArrayList<>();
-        String [] tempsTokenized = fieldSet.readString(0).split(",");
+        DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("MM-dd-yyyy");
+        String fieldDateSensor = fieldSet.readString("date");
+        LocalDate resultDate = LocalDate.from(dateFormat.parse(fieldDateSensor));
+
+        List<Double> listTemps = new ArrayList<>();
+        String [] tempsTokenized = fieldSet.readString("temps").split(",");
 
         for (int i = 1; i < tempsTokenized.length; i++) {
-            temps.add(Double.parseDouble(tempsTokenized[i]));
+            listTemps.add(Double.parseDouble(tempsTokenized[i]));
         }
-        return new InputSensorDataDTO(date, temps);
+        return new InputSensorDataDTO(resultDate, listTemps);
     }
 }
