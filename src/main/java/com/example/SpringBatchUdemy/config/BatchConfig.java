@@ -1,7 +1,11 @@
 package com.example.SpringBatchUdemy.config;
 
+import com.example.SpringBatchUdemy.dto.XMLSensorDataStructure;
 import com.example.SpringBatchUdemy.dto.InputSensorDataDTO;
-import com.example.SpringBatchUdemy.dto.OutputXMLSensorDataDTO;
+import com.example.SpringBatchUdemy.mapper.SensorDataFieldSetMapper;
+import com.example.SpringBatchUdemy.listener.ProcessDebugListener;
+import com.example.SpringBatchUdemy.listener.ReadDebugListener;
+import com.thoughtworks.xstream.security.ExplicitTypePermission;
 import lombok.NonNull;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -14,9 +18,11 @@ import org.springframework.batch.core.repository.support.JobRepositoryFactoryBea
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
-import org.springframework.batch.item.file.mapping.RecordFieldSetMapper;
 import org.springframework.batch.item.xml.StaxEventItemWriter;
-import org.springframework.boot.autoconfigure.pulsar.PulsarProperties;
+import org.springframework.batch.item.xml.builder.StaxEventItemWriterBuilder;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -25,9 +31,14 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.WritableResource;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.support.JdbcTransactionManager;
+import org.springframework.oxm.XmlMappingException;
+import org.springframework.oxm.xstream.XStreamMarshaller;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
+import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
 
@@ -36,33 +47,28 @@ public class BatchConfig extends DefaultBatchConfiguration{
 
     Log log = LogFactory.getLog(BatchConfig.class);
 
-    private final Environment environment;
-    private final Resource resourceTxT = new FileSystemResource("input/HTE2NP.txt");
-    private final WritableResource resourceXML = new FileSystemResource("output/format.xml");
+    @Autowired
+    Environment environment;
+
+    @Value("classpath:input/HTE2NP.txt")
+    Resource resourceTxT;
+
+    WritableResource resourceXML = new FileSystemResource("src/main/resources/output/data.xml");
 
 
-
-    public BatchConfig(Environment environment) {
-        this.environment = environment;
-    }
-
+    @Qualifier("convertSensorDataXML")
     @Bean
     public Job sensorData(
             JobRepository jobRepository,
-            PlatformTransactionManager platformTransactionManager,
-            SensorDataProcessor sensorDataProcessor,
-            FlatFileItemReader<InputSensorDataDTO> itemReader,
-            StaxEventItemWriter<PulsarProperties.Transaction> sensorDataDTOStaxEventItemWrite) throws Exception {
+            Step aggregateSensorData) throws Exception {
         log.info("Starting sensor data job");
         return new JobBuilder("processSensorData", jobRepository)
-                .start(aggregateSensorData(
-                        platformTransactionManager,sensorDataProcessor,itemReader,sensorDataDTOStaxEventItemWrite))
+                .start(aggregateSensorData)
                 .build();
     }
 
     @Bean
-    public DataSource domainDataSource(){
-
+    public DataSource dataSource() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource();
         dataSource.setDriverClassName(Objects.requireNonNull(environment.getProperty("spring.datasource.driver-class-name")));
         dataSource.setUrl(environment.getProperty("spring.datasource.url"));
@@ -71,56 +77,95 @@ public class BatchConfig extends DefaultBatchConfiguration{
         return dataSource;
     }
 
-
+    // --- 2. TRANSACTION MANAGER DEFINITION ---
     @Bean
-    public @NonNull JobRepository jobRepository() {
-        JobRepositoryFactoryBean factory = new JobRepositoryFactoryBean();
-        factory.setDataSource(domainDataSource());
-        factory.setDatabaseType("db2");
-        factory.setTransactionManager(batchTransactionManager(domainDataSource()));
-        try {
-            return factory.getObject();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-
-    @Bean
-    public JdbcTransactionManager batchTransactionManager(DataSource dataSource) {
+    public PlatformTransactionManager transactionManager(DataSource dataSource) {
         return new JdbcTransactionManager(dataSource);
     }
 
+    @Override
+    protected DataSource getDataSource() {
+        return dataSource();
+    }
 
-
-
+    @Override
+    protected PlatformTransactionManager getTransactionManager() {
+        return transactionManager(dataSource());
+    }
 
     @Bean
-    public FlatFileItemReader<InputSensorDataDTO> itemReader() throws Exception{
+    @Override
+    @NonNull
+    public  JobRepository jobRepository() {
+        try {
+            JobRepositoryFactoryBean factory = new JobRepositoryFactoryBean();
+            factory.setDataSource(getDataSource());
+            factory.setTransactionManager(getTransactionManager());
+
+            // Explicitly set the type to POSTGRES to ensure correct SQL dialects.
+            factory.setDatabaseType("POSTGRES");
+
+            // CRITICAL FOR POSTGRESQL:
+            // Spring Batch defaults to ISOLATION_SERIALIZABLE.
+            // ISOLATION_READ_COMMITTED prevents serialization errors in PostgreSQL.
+            factory.setIsolationLevelForCreate("ISOLATION_READ_COMMITTED");
+
+            factory.afterPropertiesSet();
+            return factory.getObject();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize JobRepository", e);
+        }
+    }
+
+    @Bean
+    public FlatFileItemReader<InputSensorDataDTO> itemReader() {
         MultiSplitterTokenizer splitterTokenizer = new MultiSplitterTokenizer();
-        splitterTokenizer.setNames("date","temps");
+        splitterTokenizer.setNames("date", "temps");
         log.info("Starting Reader txt");
         return new FlatFileItemReaderBuilder<InputSensorDataDTO>()
                 .name("tempItemReader")
+                .strict(true)
                 .resource(resourceTxT)
                 .lineTokenizer(splitterTokenizer)
-                .fieldSetMapper(new RecordFieldSetMapper<>(InputSensorDataDTO.class))
+                .fieldSetMapper(new SensorDataFieldSetMapper())
                 .build();
     }
 
 
-//    @Bean
-//    public StaxEventItemWriter<XMLSensorDataStructure> sensorDataDTOStaxEventItemWriter(SensorDataProcessor inputSensorDataDTOFlatFileItemReader){
-//        log.info("Starting Writer XML");
-//        return new StaxEventItemWriterBuilder<XMLSensorDataStructure>()
-//                .name("tempItemWriter")
-//                .resource(resourceXML)
-//                .marshaller()
-//                .overwriteOutput(true)
-//                .encoding("UTF-8")
-//                .build();
-//    }
+    @Bean
+    public XStreamMarshaller tempMarshaller() {
+        try{
+            XStreamMarshaller marshaller = new XStreamMarshaller();
+            Map<String, Class<?>> aliases = new HashMap<>();
+            aliases.put("daily-data", XMLSensorDataStructure.class);
+            marshaller.setAnnotatedClasses(XMLSensorDataStructure.class);
+            ExplicitTypePermission typePermission = new ExplicitTypePermission(new Class[]
+                    {
+                        XMLSensorDataStructure.class
+                    });
+            marshaller.setAliases(aliases);
+            marshaller.setTypePermissions(typePermission);
+            marshaller.setSupportedClasses(XMLSensorDataStructure.class);
+            return marshaller;
+        } catch (XmlMappingException e) {
+            throw new RuntimeException(e);
+        }
 
+    }
+
+    @Bean
+    public StaxEventItemWriter<XMLSensorDataStructure> sensorDataDTOStaxEventItemWriter() {
+        log.info("Starting Writer XML");
+        return new StaxEventItemWriterBuilder<XMLSensorDataStructure>()
+                .name("tempItemWriter")
+                .marshaller(tempMarshaller())
+                .resource(resourceXML)
+                .rootTagName("data")
+                .encoding("UTF-8")
+                .standalone(true)
+                .overwriteOutput(true)
+                .build();
+    }
 
 
     @Bean
@@ -128,19 +173,18 @@ public class BatchConfig extends DefaultBatchConfiguration{
             PlatformTransactionManager platformTransactionManager,
             SensorDataProcessor sensorDataProcessor,
             FlatFileItemReader<InputSensorDataDTO> itemReader,
-            StaxEventItemWriter<PulsarProperties.Transaction> sensorDataDTOStaxEventItemWriter) throws Exception {
+            StaxEventItemWriter<XMLSensorDataStructure> sensorDataDTOStaxEventItemWriter) {
             log.info("Starting aggregateSensorData");
         return new StepBuilder("process-sensor-data",jobRepository())
-                .<InputSensorDataDTO,OutputXMLSensorDataDTO>chunk(10, platformTransactionManager)
-                .chunk(10).transactionManager(platformTransactionManager)
+                .<InputSensorDataDTO,XMLSensorDataStructure>chunk(10, platformTransactionManager)
+//                .chunk(10).transactionManager(platformTransactionManager)
                 .reader(itemReader)
+                .listener(new ReadDebugListener())
                 .processor(sensorDataProcessor)
-                .writer()
+                .listener(new ProcessDebugListener())
+                .writer(sensorDataDTOStaxEventItemWriter)
                 .build();
     }
-
-
-
 
 //    @Bean
 //    public Step moveAnomalies(PlatformTransactionManager platformTransactionManager) throws Exception {

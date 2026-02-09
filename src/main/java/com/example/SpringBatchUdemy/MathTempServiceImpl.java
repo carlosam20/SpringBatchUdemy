@@ -1,17 +1,16 @@
 package com.example.SpringBatchUdemy;
 
 import com.example.SpringBatchUdemy.dto.InputSensorDataDTO;
-import com.example.SpringBatchUdemy.dto.OutputXMLSensorDataDTO;
-import com.example.SpringBatchUdemy.mapper.TemperatureMappingConverter;
+import com.example.SpringBatchUdemy.dto.XMLSensorDataStructure;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import java.util.Collections;
 
 public class MathTempServiceImpl {
 
-    Log log = LogFactory.getLog(TemperatureMappingConverter.class);
+    Log log = LogFactory.getLog(MathTempServiceImpl.class);
 
-    public OutputXMLSensorDataDTO tempOperation(InputSensorDataDTO inputSensorDataDTO){
+    public XMLSensorDataStructure tempOperation(InputSensorDataDTO inputSensorDataDTO){
 
         if (inputSensorDataDTO.temps() == null || inputSensorDataDTO.temps().isEmpty()) {
             throw new IllegalArgumentException("Sensor data contains no temperatures.");
@@ -20,12 +19,11 @@ public class MathTempServiceImpl {
             double min = conversionToCelsius(Collections.min(inputSensorDataDTO.temps()));
             log.info("Min temp done");
             double max = conversionToCelsius(Collections.max(inputSensorDataDTO.temps()));
-            log.info("Min temp done");
+            log.info("Max temp done");
             double avg = avgOperation(inputSensorDataDTO);
-
             log.info("Temperature processing successful for date: {}");
 
-            return new OutputXMLSensorDataDTO(inputSensorDataDTO.localDate() ,min,avg,max);
+            return new XMLSensorDataStructure(inputSensorDataDTO.localDate() ,min,avg,max);
 
     }
 
