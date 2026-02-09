@@ -3,7 +3,8 @@ package com.example.SpringBatchUdemy.config;
 import com.example.SpringBatchUdemy.dto.XMLSensorDataStructure;
 import com.example.SpringBatchUdemy.dto.InputSensorDataDTO;
 import com.example.SpringBatchUdemy.mapper.SensorDataFieldSetMapper;
-import com.example.SpringBatchUdemy.utils.ReadDebugListener;
+import com.example.SpringBatchUdemy.listener.ProcessDebugListener;
+import com.example.SpringBatchUdemy.listener.ReadDebugListener;
 import com.thoughtworks.xstream.security.ExplicitTypePermission;
 import lombok.NonNull;
 import org.apache.commons.logging.Log;
@@ -17,7 +18,6 @@ import org.springframework.batch.core.repository.support.JobRepositoryFactoryBea
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
-import org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper;
 import org.springframework.batch.item.xml.StaxEventItemWriter;
 import org.springframework.batch.item.xml.builder.StaxEventItemWriterBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,7 +53,7 @@ public class BatchConfig extends DefaultBatchConfiguration{
     @Value("classpath:input/HTE2NP.txt")
     Resource resourceTxT;
 
-    WritableResource resourceXML = new FileSystemResource("output/data.xml");
+    WritableResource resourceXML = new FileSystemResource("src/main/resources/output/data.xml");
 
 
     @Qualifier("convertSensorDataXML")
@@ -83,10 +83,6 @@ public class BatchConfig extends DefaultBatchConfiguration{
         return new JdbcTransactionManager(dataSource);
     }
 
-    // --- 3. INFRASTRUCTURE OVERRIDES ---
-    // These methods are called internally by DefaultBatchConfiguration to build
-    // the JobRepository, JobLauncher, and JobExplorer.
-
     @Override
     protected DataSource getDataSource() {
         return dataSource();
@@ -97,10 +93,6 @@ public class BatchConfig extends DefaultBatchConfiguration{
         return transactionManager(dataSource());
     }
 
-    // --- 4. CUSTOM JOB REPOSITORY LOGIC ---
-    // Instead of a standalone @Bean JobRepository, we override this protected method.
-    // This ensures that the custom JobRepository we build here is the one used
-    // by the internal JobLauncher.
     @Bean
     @Override
     @NonNull
@@ -146,11 +138,7 @@ public class BatchConfig extends DefaultBatchConfiguration{
             XStreamMarshaller marshaller = new XStreamMarshaller();
             Map<String, Class<?>> aliases = new HashMap<>();
             aliases.put("daily-data", XMLSensorDataStructure.class);
-            aliases.put("date", LocalDate.class);
-            aliases.put("minTemp", Double.class);
-            aliases.put("avgTemp", Double.class);
-            aliases.put("maxTemp", Double.class);
-
+            marshaller.setAnnotatedClasses(XMLSensorDataStructure.class);
             ExplicitTypePermission typePermission = new ExplicitTypePermission(new Class[]
                     {
                         XMLSensorDataStructure.class
@@ -174,6 +162,7 @@ public class BatchConfig extends DefaultBatchConfiguration{
                 .resource(resourceXML)
                 .rootTagName("data")
                 .encoding("UTF-8")
+                .standalone(true)
                 .overwriteOutput(true)
                 .build();
     }
@@ -192,6 +181,7 @@ public class BatchConfig extends DefaultBatchConfiguration{
                 .reader(itemReader)
                 .listener(new ReadDebugListener())
                 .processor(sensorDataProcessor)
+                .listener(new ProcessDebugListener())
                 .writer(sensorDataDTOStaxEventItemWriter)
                 .build();
     }
