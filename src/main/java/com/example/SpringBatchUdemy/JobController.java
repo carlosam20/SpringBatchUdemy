@@ -8,13 +8,15 @@ import org.springframework.batch.core.repository.JobExecutionAlreadyRunningExcep
 import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException;
 import org.springframework.batch.core.repository.JobRestartException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.annotation.Version;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/batch")
+@RequestMapping("/api/v1/batch")
 public class JobController {
 
 
@@ -26,7 +28,8 @@ public class JobController {
         @Autowired
         private Job sensorData;
 
-        @GetMapping("/start")
+
+        @GetMapping(path = "/start", produces = MediaType.APPLICATION_JSON_VALUE)
         public ResponseEntity<String> startJob() {
 
             try {
@@ -34,7 +37,6 @@ public class JobController {
                         .addString("JobID", String.valueOf(System.currentTimeMillis()))
                         .toJobParameters();
 
-                // The run method returns an object containing the result status
                 JobExecution execution = jobLauncher.run(sensorData, params);
 
                 if(execution.isRunning()){
@@ -42,7 +44,6 @@ public class JobController {
                 } else if (execution.isStopping()) {
                     log.info("Job status: stopping");
                 }
-
 
                 if (execution.getStatus().isUnsuccessful() || execution.getStatus() == BatchStatus.FAILED) {
                     // Check for exceptions that happened during the step
