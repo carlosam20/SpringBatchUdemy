@@ -9,24 +9,27 @@ public class MultiSplitterTokenizer extends AbstractLineTokenizer {
 
     @Override
     @NonNull
-    protected List<String> doTokenize(String line) {
+    public List<String> doTokenize(String line) {
         List<String> tokensResult = new ArrayList<>();
 
         String[] tokens = line.split("[:,]");
         StringBuilder addComma = new StringBuilder();
+
         //Obtain temps only
-        String[] dateTokens = new String[tokens.length-1];
+        String[] tempTokens = new String[tokens.length];
 
         int j=0;
         for (int i = 1; i < tokens.length; i++) {
-            dateTokens[j] = String.valueOf(addComma.append(tokens[i]).append(","));
-            j++;
+                tempTokens[j] = tokens[i]+",";
+                j++;
         }
 
-        String tokenizedTemp = String.valueOf(addComma.append(String.join("",dateTokens)));
+
+        StringBuilder joinTemps = new StringBuilder();
+        String tokenizedTemp = String.valueOf(joinTemps.append(String.join("", tempTokens)));
         //Clean last comma of the result
         int lastComma = tokenizedTemp.lastIndexOf(",");
-        tokenizedTemp = tokenizedTemp.substring(0,lastComma);
+        tokenizedTemp = (String) tokenizedTemp.subSequence(0,lastComma);
 
         tokensResult.add(tokens[0]);
         tokensResult.add(tokenizedTemp);
