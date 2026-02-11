@@ -116,7 +116,7 @@ public class BatchConfig extends DefaultBatchConfiguration{
 
     @Bean
     @StepScope
-    public FlatFileItemReader<InputSensorDataDTO> itemReader(@Value("@Value(\"#{jobParameters['input.file.path'] ?: '${input.bad.file.path}'}\")") Resource path) {
+    public FlatFileItemReader<InputSensorDataDTO> itemReader(@Value("${input.file.path}") Resource path) {
         MultiSplitterTokenizer splitterTokenizer = new MultiSplitterTokenizer();
         splitterTokenizer.setNames("date", "temps");
         log.info("Starting Reader txt");
